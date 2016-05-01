@@ -158,6 +158,9 @@ def timeStatistics(stime):
 def uncorrelate(sta, fin, do_dhdl=False):
    """Identifies uncorrelated samples and updates the arrays of the reduced potential energy and dhdlt retaining data entries of these samples only.
       'sta' and 'fin' are the starting and final snapshot positions to be read, both are arrays of dimension K."""
+
+   from pymbar.timeseries import detectEquilibration
+
    if not P.uncorr_threshold:
       if P.software.title()=='Sire':
          return dhdlt, nsnapshots, None
@@ -166,9 +169,18 @@ def uncorrelate(sta, fin, do_dhdl=False):
    u_kln = numpy.zeros([K,K,max(fin-sta)], numpy.float64) # u_kln[k,m,n] is the reduced potential energy of uncorrelated sample index n from state k evaluated at state m
    N_k = numpy.zeros(K, int) # N_k[k] is the number of uncorrelated samples from state k
    g = numpy.zeros(K,float) # autocorrelation times for the data
+   t0 = numpy.zeros(K, int)  # auto equil times for the data
+
+   if P.autoequil == True:
+      print "\n\nThe unequilibrated region will be estimated before subsampling the data:\nt0 will show the number of datapoints discarderd due to equilibration."
+
    if do_dhdl:
       dhdl = numpy.zeros([K,n_components,max(fin-sta)], float) #dhdl is value for dhdl for each component in the file at each time.
-      print "\n\nNumber of correlated and uncorrelated samples:\n\n%6s %12s %12s %12s\n" % ('State', 'N', 'N_k', 'N/N_k')
+      if P.autoequil == True:
+         print "\n\nNumber of correlated and uncorrelated samples:\n\n%6s %12s %12s %12s %12s\n" % (
+         'State', 't0', 'N', 'N_k', 'N/N_k')
+      else:
+         print "\n\nNumber of correlated and uncorrelated samples:\n\n%6s %12s %12s %12s\n" % ('State', 'N', 'N_k', 'N/N_k')
 
    UNCORR_OBSERVABLE = {'Gromacs':P.uncorr, 'Amber':'dhdl', 'Sire':'dhdl', 'Desmond':'dE'}[P.software.title()]
 
@@ -178,30 +190,44 @@ def uncorrelate(sta, fin, do_dhdl=False):
       for k in range(K):
          # Sum up over those energy components that are changing.
          dhdl_sum = numpy.sum(dhdlt[k, lchange[k], sta[k]:fin[k]], axis=0)
+
+         # Identify equilibration time
+         if P.autoequil == True:
+            nskip = 1
+            # skip frames otherwise detectEquilibration takes a long time
+            # At the moment 1000 is the hardcoded max number of t0 considered, but it could be a user input in a more complex argparse option
+            if len(dhdl_sum) > 1000:
+               nskip = int(round(len(dhdl_sum) / 1000))
+
+            t0[k] = int(detectEquilibration(dhdl_sum, fast=True, nskip=nskip)[0])
+
          # Determine indices of uncorrelated samples from potential autocorrelation analysis at state k
 
          #NML: Set statistical inefficiency (g) = 1 if vector is all 0
-         if not numpy.any(dhdl_sum):
+         if not numpy.any(dhdl_sum[t0[k]:]):
             #print "WARNING: Found all zeros for Lambda={}\n Setting statistical inefficiency g=1.".format(k)
             g[k] = 1
          else:
             # (alternatively, could use the energy differences -- here, we will use total dhdl).
-            g[k] = pymbar.timeseries.statisticalInefficiency(dhdl_sum)
+            g[k] = pymbar.timeseries.statisticalInefficiency(dhdl_sum[t0[k]:], fast=False)
 
-         indices = sta[k] + numpy.array(pymbar.timeseries.subsampleCorrelatedData(dhdl_sum, g=g[k])) # indices of uncorrelated samples
+         indices = sta[k] + t0[k] + numpy.array(pymbar.timeseries.subsampleCorrelatedData(dhdl_sum[t0[k]:], g=g[k])) # indices of uncorrelated samples
          N = len(indices) # number of uncorrelated samples
          # Handle case where we end up with too few.
          if N < P.uncorr_threshold:
             if do_dhdl:
                print "WARNING: Only %s uncorrelated samples found at lambda number %s; proceeding with analysis using correlated samples..." % (N, k)
-            indices = sta[k] + numpy.arange(len(dhdl_sum))
+            indices = sta[k] + t0[k] + numpy.arange(len(dhdl_sum[t0[k]:]))
             N = len(indices)
          N_k[k] = N # Store the number of uncorrelated samples from state k.
          if not (u_klt is None):
             for l in range(K):
                u_kln[k,l,0:N] = u_klt[k,l,indices]
          if do_dhdl:
-            print "%6s %12s %12s %12.2f" % (k, fin[k], N_k[k], g[k])
+            if P.autoequil == True:
+               print "%6s %12s %12s %12s %12.2f" % (k, t0[k], fin[k]-t0[k], N_k[k], g[k])
+            else:
+               print "%6s %12s %12s %12.2f" % (k, fin[k], N_k[k], g[k])
             for n in range(n_components):
                dhdl[k,n,0:N] = dhdlt[k,n,indices]
 
