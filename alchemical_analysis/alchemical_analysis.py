@@ -159,8 +159,6 @@ def uncorrelate(sta, fin, do_dhdl=False):
    """Identifies uncorrelated samples and updates the arrays of the reduced potential energy and dhdlt retaining data entries of these samples only.
       'sta' and 'fin' are the starting and final snapshot positions to be read, both are arrays of dimension K."""
 
-   from pymbar.timeseries import detectEquilibration
-
    if not P.uncorr_threshold:
       if P.software.title()=='Sire':
          return dhdlt, nsnapshots, None
@@ -172,6 +170,7 @@ def uncorrelate(sta, fin, do_dhdl=False):
    t0 = numpy.zeros(K, int)  # auto equil times for the data
 
    if P.autoequil == True:
+      from pymbar.timeseries import detectEquilibration
       print "\n\nThe unequilibrated region will be estimated before subsampling the data:\nt0 will show the number of datapoints discarderd due to equilibration."
 
    if do_dhdl:
@@ -237,23 +236,37 @@ def uncorrelate(sta, fin, do_dhdl=False):
       for k in range(K):
          # Sum up over the energy components; notice, that only the relevant data is being used in the third dimension.
          dhdl_sum = numpy.sum(dhdlt[k,:,sta[k]:fin[k]], axis=0)
+
+         # Identify equilibration time
+         if P.autoequil == True:
+            nskip = 1
+            # skip frames otherwise detectEquilibration takes a long time
+            # At the moment 1000 is the hardcoded max number of t0 considered, but it could be a user input in a more complex argparse option
+            if len(dhdl_sum) > 1000:
+               nskip = int(round(len(dhdl_sum) / 1000))
+
+            t0[k] = int(detectEquilibration(dhdl_sum, fast=True, nskip=nskip)[0])
+
          # Determine indices of uncorrelated samples from potential autocorrelation analysis at state k
          # (alternatively, could use the energy differences -- here, we will use total dhdl).
-         g[k] = pymbar.timeseries.statisticalInefficiency(dhdl_sum)
-         indices = sta[k] + numpy.array(pymbar.timeseries.subsampleCorrelatedData(dhdl_sum, g=g[k])) # indices of uncorrelated samples
+         g[k] = pymbar.timeseries.statisticalInefficiency(dhdl_sum[t0[k]:], fast=False)
+         indices = sta[k] + t0[k] + numpy.array(pymbar.timeseries.subsampleCorrelatedData(dhdl_sum[t0[k]:], g=g[k])) # indices of uncorrelated samples
          N = len(indices) # number of uncorrelated samples
          # Handle case where we end up with too few.
          if N < P.uncorr_threshold:
             if do_dhdl:
                print "WARNING: Only %s uncorrelated samples found at lambda number %s; proceeding with analysis using correlated samples..." % (N, k)
-            indices = sta[k] + numpy.arange(len(dhdl_sum))
+            indices = sta[k] + t0[k] + numpy.arange(len(dhdl_sum[t0[k]:]))
             N = len(indices)
          N_k[k] = N # Store the number of uncorrelated samples from state k.
          if not (u_klt is None):
             for l in range(K):
                u_kln[k,l,0:N] = u_klt[k,l,indices]
          if do_dhdl:
-            print "%6s %12s %12s %12.2f" % (k, fin[k], N_k[k], g[k])
+            if P.autoequil == True:
+               print "%6s %12s %12s %12s %12.2f" % (k, t0[k], fin[k]-t0[k], N_k[k], g[k])
+            else:
+               print "%6s %12s %12s %12.2f" % (k, fin[k], N_k[k], g[k])
             for n in range(n_components):
                dhdl[k,n,0:N] = dhdlt[k,n,indices]
 
@@ -266,13 +279,23 @@ def uncorrelate(sta, fin, do_dhdl=False):
 
          dE = u_klt[k,k+1,sta[k]:fin[k]] if not k==K-1 else u_klt[k,k-1,sta[k]:fin[k]]
 
-         g[k] = pymbar.timeseries.statisticalInefficiency(dE)
-         indices = sta[k] + numpy.array(pymbar.timeseries.subsampleCorrelatedData(dE, g=g[k])) # indices of uncorrelated samples
+         # Identify equilibration time
+         if P.autoequil == True:
+            nskip = 1
+            # skip frames otherwise detectEquilibration takes a long time
+            # At the moment 1000 is the hardcoded max number of t0 considered, but it could be a user input in a more complex argparse option
+            if len(dE) > 1000:
+               nskip = int(round(len(dE) / 1000))
+
+            t0[k] = int(detectEquilibration(dE, fast=True, nskip=nskip)[0])
+
+         g[k] = pymbar.timeseries.statisticalInefficiency(dE[t0[k]:])
+         indices = sta[k] + t0[k] + numpy.array(pymbar.timeseries.subsampleCorrelatedData(dE[t0[k]:], g=g[k])) # indices of uncorrelated samples
          N = len(indices) # number of uncorrelated samples
          # Handle case where we end up with too few.
          if N < P.uncorr_threshold:
             print "WARNING: Only %s uncorrelated samples found at lambda number %s; proceeding with analysis using correlated samples..." % (N, k)
-            indices = sta[k] + numpy.arange(len(dE))
+            indices = sta[k] + t0[k] + numpy.arange(len(dE[t0[k]:]))
             N = len(indices)
          N_k[k] = N # Store the number of uncorrelated samples from state k.
          if not (u_klt is None):
@@ -582,7 +605,7 @@ def estimatePairs():
          if name == 'MBAR':
             #===================================================================================================
             # Store the MBAR free energy difference (already estimated above) properly, i.e. by state.
-            #===================================================================================================        
+            #===================================================================================================
             (df['MBAR'], ddf['MBAR']) =  Deltaf_ij[k,k+1], numpy.nan_to_num(dDeltaf_ij[k,k+1])
 
       df_allk = numpy.append(df_allk,df)
@@ -622,7 +645,7 @@ def totalEnergies():
    elif startcoul==endcoul:
       #There is no coulomb section
       if P.verbose: print "No Coulomb transformation present."
-      pass    
+      pass
    else:
       startcoul = 0
       startvdw = endcoul
