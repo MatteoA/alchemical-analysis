@@ -40,10 +40,11 @@ from utils.zeroxvg import *
 #===================================================================================================
 
 parser = ArgumentParser(description='Alchemical Analysis: An open tool implementing some recommended practices for analyzing alchemical free energy calculations.')
+group = parser.add_mutually_exclusive_group()
 parser.add_argument('-a', '--software', dest = 'software', help = 'Package\'s name the data files come from: Gromacs, Sire, Desmond, or AMBER. Default: Gromacs.', default = 'Gromacs')
 parser.add_argument('-c', '--cfm', dest = 'bCFM', help = 'The Curve-Fitting-Method-based consistency inspector. Default: False.', default = False, action = 'store_true')
 parser.add_argument('-d', '--dir', dest = 'datafile_directory', help = 'Directory in which data files are stored. Default: Current directory.', default = '.')
-parser.add_argument('-f', '--forwrev', dest = 'bForwrev', help = 'Plot the free energy change as a function of time in both directions, with the specified number of points in the time plot. The number of time points (an integer) must be provided. Default: 0', default = 0, type=int)
+group.add_argument('-f', '--forwrev', dest = 'bForwrev', help = 'Plot the free energy change as a function of time in both directions, with the specified number of points in the time plot. The number of time points (an integer) must be provided. Default: 0', default = 0, type=int)
 parser.add_argument('-g', '--breakdown', dest = 'breakdown', help = 'Plot the free energy differences evaluated for each pair of adjacent states for all methods, including the dH/dlambda curve for TI. Default: False.', default = False, action = 'store_true')
 parser.add_argument('-i', '--threshold', dest = 'uncorr_threshold', help = 'Proceed with correlated samples if the number of uncorrelated samples is found to be less than this number. If 0 is given, the time series analysis will not be performed at all. Default: 50.', default = 50, type=int)
 parser.add_argument('-k', '--koff', dest = 'bSkipLambdaIndex', help = 'Give a string of lambda indices separated by \'-\' and they will be removed from the analysis. (Another approach is to have only the files of interest present in the directory). Default: None.', default = '')
@@ -54,6 +55,7 @@ parser.add_argument('-p', '--prefix', dest = 'prefix', help = 'Prefix for datafi
 parser.add_argument('-q', '--suffix', dest = 'suffix', help = 'Suffix for datafile sets, i.e. \'xvg\' (default).', default = 'xvg')
 parser.add_argument('-r', '--decimal', dest = 'decimal', help = 'The number of decimal places the free energies are to be reported with. No worries, this is for the text output only; the full-precision data will be stored in \'results.pickle\'. Default: 3.', default = 3, type=int)
 parser.add_argument('-s', '--skiptime', dest = 'equiltime', help = 'Discard data prior to this specified time as \'equilibration\' data. Units picoseconds. Default: 0 ps.', default = 0, type=float)
+group.add_argument('-S', '--autoequil', dest = 'autoequil', help = 'Automated equilibration detection. Not compatible with --forwrev. Default: False.', default = False, action = 'store_true')
 parser.add_argument('-t', '--temperature', dest = 'temperature', help = "Temperature in K. Default: 298 K.", default = 298, type=float)
 parser.add_argument('-u', '--units', dest = 'units', help = 'Units to report energies: \'kJ\', \'kcal\', and \'kBT\'. Default: \'kJ\'', default = 'kJ')
 parser.add_argument('-v', '--verbose', dest = 'verbose', help = 'Verbose option. Default: False.', default = False, action = 'store_true')
